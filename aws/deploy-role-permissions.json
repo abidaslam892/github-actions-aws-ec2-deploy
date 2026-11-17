@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Sid": "EcrLogin", "Effect": "Allow", "Action": "ecr:GetAuthorizationToken", "Resource": "*" },
+    {
+      "Sid": "EcrPush", "Effect": "Allow",
+      "Action": ["ecr:BatchCheckLayerAvailability", "ecr:InitiateLayerUpload", "ecr:UploadLayerPart",
+                 "ecr:CompleteLayerUpload", "ecr:PutImage", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
+      "Resource": "arn:aws:ecr:REGION:ACCOUNT_ID:repository/REPOSITORY"
+    },
+    {
+      "Sid": "DeployViaSsm", "Effect": "Allow", "Action": "ssm:SendCommand",
+      "Resource": ["arn:aws:ec2:REGION:ACCOUNT_ID:instance/INSTANCE_ID",
+                   "arn:aws:ssm:REGION::document/AWS-RunShellScript"]
+    },
+    { "Sid": "ReadCommandResult", "Effect": "Allow", "Action": "ssm:GetCommandInvocation", "Resource": "*" }
+  ]
+}

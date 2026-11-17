@@ -1,0 +1,10 @@
+# Next.js / Node. For Next.js set output: "standalone" in next.config.js for a smaller image.
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build --if-present
+ENV NODE_ENV=production PORT=8000
+EXPOSE 8000
+CMD ["npm", "start"]

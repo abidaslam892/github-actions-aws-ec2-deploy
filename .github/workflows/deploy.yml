@@ -1,0 +1,64 @@
+# Test -> build image -> push to Amazon ECR -> deploy to EC2 through SSM.
+# No AWS keys are stored: GitHub signs in to AWS with an IAM role (OIDC).
+# Switched off until you set the repository variable DEPLOY_ENABLED=true (see README).
+name: deploy
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  id-token: write
+  contents: read
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+  APP_DIR: ${{ vars.APP_DIR || '/opt/app' }}
+jobs:
+  test:
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Pick the block for your stack and delete the other.
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt && python manage.py test   # Django
+      # - uses: actions/setup-node@v4
+      #   with: { node-version: 20 }
+      # - run: npm ci && npm test                                       # Node / Next.js
+  deploy:
+    if: vars.DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production   # add required reviewers to approve each production deploy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push image
+        run: |
+          IMAGE=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+      - name: Deploy on EC2 through SSM
+        run: |
+          jq -n --arg dir "$APP_DIR" --arg reg "${{ steps.ecr.outputs.registry }}" \
+                --arg img "$IMAGE" --arg region "$AWS_REGION" \
+            '{commands: ["cd " + $dir,
+                         "aws ecr get-login-password --region " + $region + " | docker login --username AWS --password-stdin " + $reg,
+                         "export IMAGE=" + $img,
+                         "docker compose pull",
+                         "docker compose up -d",
+                         "echo " + $img + " > last_deployed_image"]}' > ssm-params.json
+          aws ssm send-command \
+            --instance-ids "$EC2_INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --comment "deploy ${{ github.sha }}" \
+            --parameters file://ssm-params.json \
+            --query Command.CommandId --output text

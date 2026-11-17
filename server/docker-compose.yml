@@ -1,0 +1,9 @@
+# Put this in APP_DIR (default /opt/app) on the EC2 instance, next to your .env.
+# The workflow sets IMAGE to the image it just pushed to ECR.
+services:
+  app:
+    image: ${IMAGE}
+    restart: unless-stopped
+    env_file: .env            # your app settings; never commit this file
+    ports:
+      - "127.0.0.1:8000:8000" # only Nginx on the host is public
